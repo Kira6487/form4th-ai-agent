@@ -3,8 +3,8 @@
 Monorepo for the FORM4TH AI Agent platform. Phases 1 and 2 provide a Next.js
 foundation, Supabase Auth integration, a modular FastAPI API, PostgreSQL
 connectivity through SQLAlchemy/Alembic, tenant authorization, and basic
-company management. Knowledge ingestion, RAG, chat, leads and integrations
-remain reserved for later phases.
+company management, and Phase 3 knowledge ingestion. Embeddings, RAG, chat,
+leads and integrations remain reserved for later phases.
 
 ## Requisitos
 
@@ -137,7 +137,32 @@ Endpoints nuevos: `GET /api/v1/me`, `POST/GET /api/v1/organizations`,
 `GET /api/v1/organizations/{id}` y CRUD de companies bajo
 `/api/v1/organizations/{organization_id}/companies`.
 
+## Knowledge ingestion
+
+Fase 3 convierte Website, Manual text y PDF en contenido normalizado. Website
+usa Firecrawl asincrono y limitado por `FIRECRAWL_MAX_PAGES`; PDF valida MIME,
+firma `%PDF-` y tamano antes de extraer texto con `pypdf`. Los PDFs usan el
+bucket privado de Supabase Storage indicado por `SUPABASE_STORAGE_BUCKET`; OCR
+no esta soportado en Fase 3.
+
+El pipeline es `Source -> Ingestion Run -> Document -> Chunk`. El normalizador
+conserva encabezados, listas y parrafos; el chunker usa una estimacion neutral
+de tokens configurable con `CHUNK_TARGET_APPROX_TOKENS` (800) y
+`CHUNK_OVERLAP_APPROX_TOKENS` (100). Cada documento y chunk tiene hash SHA-256.
+Una reindexacion solo activa la nueva version despues de completarse; si falla,
+la version anterior permanece activa.
+
+Knowledge esta disponible en `/dashboard/knowledge` y
+`/dashboard/companies/[id]/knowledge`, con altas, estado/polling, reindex,
+disable y previews paginados de documentos/chunks. No se crean embeddings,
+vectores ni busqueda en esta fase.
+
 ## Migrations y RLS
+
+Migration `0003_knowledge_ingestion` agrega las tablas tenant-aware de Knowledge
+(`knowledge_sources`, `knowledge_ingestion_runs`, `knowledge_documents` y
+`knowledge_chunks`) con indices y policies RLS. No se declara validacion RLS
+real sin un proyecto Supabase de desarrollo.
 
 Migration `0002_multitenancy` crea `profiles`, `organizations`,
 `organization_members` y `companies`, con constraints, índices, RLS y policies.
@@ -149,7 +174,7 @@ alembic upgrade head
 
 La estrategia reproducible para verificar RLS con Supabase está en
 `supabase/tests/README.md`. No se declara ejecutada sin un proyecto Supabase
-real. pgvector y knowledge tables pertenecen a fases posteriores.
+real. pgvector y embeddings pertenecen a fases posteriores.
 
 ## Docker
 
@@ -168,7 +193,7 @@ secretos; nunca las copies dentro de la imagen.
 Cada fase se desarrolla en una rama propia. Esta implementación corresponde a:
 
 ```text
-feature/fase-2-multitenancy-companies
+feature/fase-3-knowledge-ingestion
 ```
 
 Las siguientes ramas previstas están documentadas en `Docs/AGENTS.md`; no se
@@ -178,9 +203,9 @@ crean por adelantado. El flujo recomendado para publicar esta fase es:
 git status
 git branch --show-current
 git log --oneline -10
-git push -u origin feature/fase-2-multitenancy-companies
+git push -u origin feature/fase-3-knowledge-ingestion
 ```
 
-Después, abre un Pull Request desde `feature/fase-2-multitenancy-companies` hacia `main`,
+Después, abre un Pull Request desde `feature/fase-3-knowledge-ingestion` hacia `main`,
 revisa los checks automatizados y realiza el merge mediante el flujo protegido
 del repositorio. Este agente no hace push ni crea Pull Requests.

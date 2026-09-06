@@ -21,3 +21,12 @@ Recommended reproducible flow:
 FastAPI authorization is tested without Internet in
 `backend/tests/test_tenant_isolation.py`; these checks are the second RLS
 layer and must run against PostgreSQL/Supabase.
+
+## Phase 3 knowledge checks
+
+After `0003_knowledge_ingestion` is applied, repeat the same two-user setup
+with one company and source per organization. Verify that members can read
+only their tenant's sources, documents and chunks; owner/admin can mutate;
+non-members and `anon` cannot read or write; and direct UUID access cannot
+cross organization or company boundaries. The local suite does not validate
+PostgreSQL RLS because no Supabase project is configured in this repository.
