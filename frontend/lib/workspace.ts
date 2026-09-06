@@ -1,5 +1,5 @@
 import { apiFetch } from "../services/api/client";
-import type { Company, CompanyInput, CompanyUpdate, Organization } from "../types/workspace";
+import type { Company, CompanyInput, CompanyUpdate, KnowledgeChunk, KnowledgeDocument, KnowledgePage, KnowledgeSource, Organization } from "../types/workspace";
 
 export function getOrganizations(): Promise<Organization[]> {
   return apiFetch<Organization[]>("/api/v1/organizations");
@@ -36,3 +36,15 @@ export function updateCompany(organizationId: string, companyId: string, input: 
     body: JSON.stringify(input),
   });
 }
+
+const knowledgePath = (organizationId: string, companyId: string) => `/api/v1/organizations/${organizationId}/companies/${companyId}/knowledge`;
+export const getKnowledgeSources = (o: string, c: string) => apiFetch<KnowledgeSource[]>(`${knowledgePath(o, c)}/sources`);
+export const getKnowledgeSource = (o: string, c: string, s: string) => apiFetch<KnowledgeSource>(`${knowledgePath(o, c)}/sources/${s}`);
+export const createManualSource = (o: string, c: string, input: { name: string; title: string; content: string; description?: string }) => apiFetch<KnowledgeSource>(`${knowledgePath(o, c)}/sources/manual`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export const createWebsiteSource = (o: string, c: string, input: { name: string; source_url: string; description?: string }) => apiFetch<KnowledgeSource>(`${knowledgePath(o, c)}/sources/website`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export function createPdfSource(o: string, c: string, name: string, file: File, description?: string) { const form = new FormData(); form.append("name", name); if (description) form.append("description", description); form.append("file", file); return apiFetch<KnowledgeSource>(`${knowledgePath(o, c)}/sources/pdf`, { method: "POST", body: form }); }
+export const reindexKnowledgeSource = (o: string, c: string, s: string) => apiFetch<KnowledgeSource>(`${knowledgePath(o, c)}/sources/${s}/reindex`, { method: "POST" });
+export const disableKnowledgeSource = (o: string, c: string, s: string) => apiFetch<KnowledgeSource>(`${knowledgePath(o, c)}/sources/${s}/disable`, { method: "POST" });
+export const getKnowledgeDocuments = (o: string, c: string, s: string) => apiFetch<KnowledgePage<KnowledgeDocument>>(`${knowledgePath(o, c)}/sources/${s}/documents`);
+export const getKnowledgeChunks = (o: string, c: string, d: string) => apiFetch<KnowledgePage<KnowledgeChunk>>(`${knowledgePath(o, c)}/documents/${d}/chunks`);
+export const getKnowledgeStatus = (o: string, c: string, s: string) => apiFetch<{ source: KnowledgeSource }>(`${knowledgePath(o, c)}/sources/${s}/status`);
