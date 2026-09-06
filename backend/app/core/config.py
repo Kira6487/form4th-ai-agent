@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     chunk_target_approx_tokens: int = Field(default=800, ge=100, le=5000)
     chunk_overlap_approx_tokens: int = Field(default=100, ge=0, le=1000)
     supabase_storage_bucket: str = "knowledge-files"
+    embedding_batch_size: int = Field(default=50, ge=1, le=100)
+    rag_default_top_k: int = Field(default=5, ge=1, le=20)
+    rag_max_top_k: int = Field(default=20, ge=1, le=100)
+    rag_min_similarity: float = Field(default=0.55, ge=0, le=1)
 
     allowed_origins: str = "http://localhost:3000"
 

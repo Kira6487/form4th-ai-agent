@@ -114,6 +114,23 @@ def test_manual_source_is_tenant_scoped_and_reindex_preserves_previous(tenant_cl
     own_docs = client.get(f"/api/v1/organizations/{org_a.id}/companies/{company_a.id}/knowledge/sources/{source_id}/documents")
     assert own_docs.status_code == 200
     assert own_docs.json()["items"][0]["content"] == "Version one content."
+    chunk_preview = client.get(f"/api/v1/organizations/{org_a.id}/companies/{company_a.id}/knowledge/documents/{own_docs.json()['items'][0]['id']}/chunks")
+    assert chunk_preview.status_code == 200
+    assert chunk_preview.json()["items"][0]["embedding_status"] == "pending"
+
+    async def mark_chunk_ready():
+        async with session_factory() as session:
+            chunk = await session.scalar(select(KnowledgeChunk).where(KnowledgeChunk.source_id == UUID(source_id), KnowledgeChunk.is_active.is_(True)))
+            chunk.embedding = [0.0] * 768
+            chunk.embedding_model = "gemini-embedding-2"
+            chunk.embedding_dimensions = 768
+            chunk.embedding_status = "ready"
+            await session.commit()
+
+    asyncio.run(mark_chunk_ready())
+    reused = client.post(f"/api/v1/organizations/{org_a.id}/companies/{company_a.id}/knowledge/sources/{source_id}/reindex")
+    assert reused.status_code == 200, reused.text
+    assert reused.json()["embedded_chunks_count"] == 1
 
     cross_tenant = client.get(f"/api/v1/organizations/{org_b.id}/companies/{company_b.id}/knowledge/sources/{source_id}")
     assert cross_tenant.status_code == 403
@@ -135,7 +152,7 @@ def test_manual_source_is_tenant_scoped_and_reindex_preserves_previous(tenant_cl
             chunks = list((await session.scalars(select(KnowledgeChunk).where(KnowledgeChunk.source_id == source_uuid))).all())
             return source.status, [doc.is_active for doc in documents], [chunk.is_active for chunk in chunks]
 
-    assert asyncio.run(verify_inactive()) == ("disabled", [False], [False])
+    assert asyncio.run(verify_inactive()) == ("disabled", [False, False], [False, False])
 
 
 class FakeCrawler(WebCrawlerProvider):

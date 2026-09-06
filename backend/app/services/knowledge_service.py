@@ -48,9 +48,12 @@ async def company_for_source(session: AsyncSession, organization_id: UUID, compa
 
 async def source_with_counts(session: AsyncSession, source: KnowledgeSource) -> KnowledgeSource:
     await session.refresh(source)
-    documents, chunks = await source_counts(session, source.id)
+    documents, chunks, embedded, pending, failed = await source_counts(session, source.id)
     source.documents_count = documents  # type: ignore[attr-defined]
     source.chunks_count = chunks  # type: ignore[attr-defined]
+    source.embedded_chunks_count = embedded  # type: ignore[attr-defined]
+    source.pending_embeddings_count = pending  # type: ignore[attr-defined]
+    source.failed_embeddings_count = failed  # type: ignore[attr-defined]
     return source
 
 
@@ -179,6 +182,31 @@ async def _activate_content(
             ))
     if not documents:
         raise KnowledgeError("no_content", "No extractable content was found")
+    reusable: dict[str, KnowledgeChunk] = {}
+    chunk_hashes = {chunk.content_hash for chunk in chunks}
+    if chunk_hashes:
+        existing = await session.scalars(select(KnowledgeChunk).where(
+            KnowledgeChunk.source_id == source.id,
+            KnowledgeChunk.content_hash.in_(chunk_hashes),
+            KnowledgeChunk.embedding_status == "ready",
+            KnowledgeChunk.embedding_model == settings.gemini_embedding_model,
+            KnowledgeChunk.embedding_dimensions == settings.gemini_embedding_dimensions,
+            KnowledgeChunk.embedding.is_not(None),
+        ))
+        reusable = {chunk.content_hash: chunk for chunk in existing}
+    for chunk in chunks:
+        previous = reusable.get(chunk.content_hash)
+        if previous is not None:
+            chunk.embedding = previous.embedding
+            chunk.embedding_model = previous.embedding_model
+            chunk.embedding_dimensions = previous.embedding_dimensions
+            chunk.embedded_at = previous.embedded_at
+            chunk.embedding_status = "ready"
+            chunk.embedding_error = None
+    # Deactivate the previous version before inserting the new partial-unique keys.
+    # The surrounding transaction still rolls back to the previous active version on failure.
+    await session.execute(update(KnowledgeDocument).where(KnowledgeDocument.source_id == source.id, KnowledgeDocument.ingestion_run_id != run.id).values(is_active=False))
+    await session.execute(update(KnowledgeChunk).where(KnowledgeChunk.source_id == source.id, KnowledgeChunk.ingestion_run_id != run.id).values(is_active=False))
     session.add_all(documents)
     await session.flush()
     # Chunks are created after document ids are assigned. The default UUID is available after flush.
@@ -186,8 +214,6 @@ async def _activate_content(
         chunk.document_id = document.id
     session.add_all(chunks)
     await session.flush()
-    await session.execute(update(KnowledgeDocument).where(KnowledgeDocument.source_id == source.id, KnowledgeDocument.ingestion_run_id != run.id).values(is_active=False))
-    await session.execute(update(KnowledgeChunk).where(KnowledgeChunk.source_id == source.id, KnowledgeChunk.ingestion_run_id != run.id).values(is_active=False))
     await session.execute(update(KnowledgeDocument).where(KnowledgeDocument.ingestion_run_id == run.id).values(is_active=True))
     await session.execute(update(KnowledgeChunk).where(KnowledgeChunk.ingestion_run_id == run.id).values(is_active=True))
     run.documents_processed = len(documents)

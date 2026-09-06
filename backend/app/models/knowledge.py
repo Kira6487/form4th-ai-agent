@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.vector import Vector768
 
 json_type = JSON().with_variant(JSONB(), "postgresql")
 
@@ -106,6 +107,7 @@ class KnowledgeChunk(Base):
         Index("ix_knowledge_chunks_document_id", "document_id"),
         Index("ix_knowledge_chunks_content_hash", "content_hash"),
         Index("ix_knowledge_chunks_is_active", "is_active"),
+        Index("ix_knowledge_chunks_embedding_status", "embedding_status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -120,6 +122,12 @@ class KnowledgeChunk(Base):
     approx_token_count: Mapped[int | None] = mapped_column(Integer)
     chunk_metadata: Mapped[dict] = mapped_column("metadata", json_type, nullable=False, default=dict)
     is_active: Mapped[bool] = mapped_column(default=False, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector768(768), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    embedding_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
+    embedding_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

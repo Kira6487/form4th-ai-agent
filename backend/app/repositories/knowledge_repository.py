@@ -63,7 +63,10 @@ async def list_chunks(session: AsyncSession, organization_id: UUID, company_id: 
     return items, total
 
 
-async def source_counts(session: AsyncSession, source_id: UUID) -> tuple[int, int]:
+async def source_counts(session: AsyncSession, source_id: UUID) -> tuple[int, int, int, int, int]:
     documents = int(await session.scalar(select(func.count()).where(KnowledgeDocument.source_id == source_id, KnowledgeDocument.is_active.is_(True))) or 0)
     chunks = int(await session.scalar(select(func.count()).where(KnowledgeChunk.source_id == source_id, KnowledgeChunk.is_active.is_(True))) or 0)
-    return documents, chunks
+    embedded = int(await session.scalar(select(func.count()).where(KnowledgeChunk.source_id == source_id, KnowledgeChunk.is_active.is_(True), KnowledgeChunk.embedding_status == "ready")) or 0)
+    pending = int(await session.scalar(select(func.count()).where(KnowledgeChunk.source_id == source_id, KnowledgeChunk.is_active.is_(True), KnowledgeChunk.embedding_status.in_(["pending", "processing"]))) or 0)
+    failed = int(await session.scalar(select(func.count()).where(KnowledgeChunk.source_id == source_id, KnowledgeChunk.is_active.is_(True), KnowledgeChunk.embedding_status == "failed")) or 0)
+    return documents, chunks, embedded, pending, failed
