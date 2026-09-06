@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     supabase_url: str = "https://vytmhyerzlxqheisordr.supabase.co"
     supabase_publishable_key: str | None = Field(default=None, repr=False)
     supabase_anon_key: str | None = Field(default=None, repr=False)
+    supabase_secret_key: str | None = Field(default=None, repr=False)
     supabase_service_role_key: str | None = Field(default=None, repr=False)
     database_url: str | None = Field(default=None, repr=False)
     firecrawl_api_key: str | None = Field(default=None, repr=False)

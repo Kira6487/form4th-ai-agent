@@ -18,13 +18,14 @@ class PrivateFileStorage(Protocol):
 
 class SupabaseStorage:
     def __init__(self, settings: Settings):
-        if not settings.supabase_service_role_key:
+        secret_key = settings.supabase_secret_key or settings.supabase_service_role_key
+        if not secret_key:
             raise StorageError("Supabase Storage is not configured")
         self.base_url = settings.supabase_url.rstrip("/")
         self.bucket = settings.supabase_storage_bucket
         self.headers = {
-            "Authorization": f"Bearer {settings.supabase_service_role_key}",
-            "apikey": settings.supabase_service_role_key,
+            "Authorization": f"Bearer {secret_key}",
+            "apikey": secret_key,
         }
 
     async def _ensure_private_bucket(self, client: httpx.AsyncClient) -> None:
