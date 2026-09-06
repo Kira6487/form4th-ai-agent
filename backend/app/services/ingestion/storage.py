@@ -12,6 +12,7 @@ class StorageError(RuntimeError):
 
 class PrivateFileStorage(Protocol):
     async def upload_pdf(self, path: str, data: bytes) -> None: ...
+    async def download(self, path: str) -> bytes: ...
     async def delete(self, path: str) -> None: ...
 
 
@@ -54,6 +55,16 @@ class SupabaseStorage:
             )
             if response.status_code not in {200, 204, 404}:
                 raise StorageError("Unable to clean up stored PDF")
+
+    async def download(self, path: str) -> bytes:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(
+                f"{self.base_url}/storage/v1/object/{self.bucket}/{path}",
+                headers=self.headers,
+            )
+            if response.status_code != 200:
+                raise StorageError("Unable to read PDF from private storage")
+            return response.content
 
 
 def storage_path(organization_id: UUID, company_id: UUID, source_id: UUID, object_id: UUID) -> str:

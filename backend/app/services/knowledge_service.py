@@ -118,6 +118,11 @@ def _page_content(page: dict[str, Any]) -> tuple[str, str, str | None, dict[str,
     }
 
 
+def _extract_pdf_text(data: bytes) -> str:
+    reader = PdfReader(BytesIO(data))
+    return normalize_content("\n\n".join(page.extract_text() or "" for page in reader.pages))
+
+
 async def _activate_content(
     session: AsyncSession,
     source: KnowledgeSource,
@@ -254,8 +259,7 @@ async def create_pdf_source(session: AsyncSession, organization_id: UUID, compan
     settings = settings or get_settings()
     try:
         safe_name = validate_pdf_bytes(filename, content_type, data, settings.max_pdf_size_mb * 1024 * 1024)
-        reader = PdfReader(BytesIO(data))
-        content = normalize_content("\n\n".join(page.extract_text() or "" for page in reader.pages))
+        content = _extract_pdf_text(data)
         if not content:
             raise KnowledgeError("pdf_no_text", "No extractable text found. OCR is not supported in Phase 3.")
     except KnowledgeError:
@@ -338,15 +342,23 @@ async def reindex_source(session: AsyncSession, source: KnowledgeSource, user_id
             await _fail_run(session, source, run, "crawl_start_failed", exc)
             raise KnowledgeError("crawler_unavailable", "Website crawler is unavailable") from exc
         return await source_with_counts(session, source)
-    active_docs = list(await session.scalars(select(KnowledgeDocument).where(KnowledgeDocument.source_id == source.id, KnowledgeDocument.is_active.is_(True)).order_by(KnowledgeDocument.created_at.asc())))
-    if not active_docs:
-        await _fail_run(session, source, run, "no_previous_content", "No previous content is available for reindex")
-        raise KnowledgeError("no_previous_content", "No previous content is available for reindex")
     run.status = "processing"
     run.started_at = _now()
     await session.commit()
     try:
-        pages = [{"title": doc.title, "content": doc.content, "url": doc.source_url} for doc in active_docs]
+        if source.source_type == "pdf":
+            if not source.storage_path:
+                raise KnowledgeError("storage_unavailable", "Stored PDF path is missing")
+            data = await SupabaseStorage(settings).download(source.storage_path)
+            content = _extract_pdf_text(data)
+            if not content:
+                raise KnowledgeError("pdf_no_text", "No extractable text found. OCR is not supported in Phase 3.")
+            pages = [{"title": source.name, "content": content}]
+        else:
+            active_docs = list(await session.scalars(select(KnowledgeDocument).where(KnowledgeDocument.source_id == source.id, KnowledgeDocument.is_active.is_(True)).order_by(KnowledgeDocument.created_at.asc())))
+            if not active_docs:
+                raise KnowledgeError("no_previous_content", "No previous content is available for reindex")
+            pages = [{"title": doc.title, "content": doc.content, "url": doc.source_url} for doc in active_docs]
         await _activate_content(session, source, run, pages, settings)
     except Exception as exc:
         await _fail_run(session, source, run, getattr(exc, "code", "reindex_failed"), exc)
