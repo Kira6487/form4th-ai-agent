@@ -61,7 +61,10 @@ export function StatusDashboard() {
     setIsRefreshing(false);
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => { void refresh(); }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [refresh]);
 
   return (
     <div className="shell">
