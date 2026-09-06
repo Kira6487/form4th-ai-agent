@@ -25,12 +25,25 @@ class Settings(BaseSettings):
     gemini_embedding_dimensions: int = 768
 
     supabase_url: str = "https://vytmhyerzlxqheisordr.supabase.co"
+    supabase_publishable_key: str | None = Field(default=None, repr=False)
     supabase_anon_key: str | None = Field(default=None, repr=False)
     supabase_service_role_key: str | None = Field(default=None, repr=False)
     database_url: str | None = Field(default=None, repr=False)
     firecrawl_api_key: str | None = Field(default=None, repr=False)
 
     allowed_origins: str = "http://localhost:3000"
+
+    @property
+    def supabase_jwt_issuer(self) -> str:
+        return f"{self.supabase_url.rstrip('/')}/auth/v1"
+
+    @property
+    def supabase_jwks_url(self) -> str:
+        return f"{self.supabase_jwt_issuer}/.well-known/jwks.json"
+
+    @property
+    def supabase_jwt_audience(self) -> str:
+        return "authenticated"
 
     @property
     def cors_origins(self) -> list[str]:
