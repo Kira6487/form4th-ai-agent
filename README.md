@@ -4,8 +4,10 @@ Monorepo for the FORM4TH AI Agent platform. Phases 1 and 2 provide a Next.js
 foundation, Supabase Auth integration, a modular FastAPI API, PostgreSQL
 connectivity through SQLAlchemy/Alembic, tenant authorization, and basic
 company management. Phase 3 adds knowledge ingestion and Phase 4 adds Gemini
-embeddings, pgvector retrieval and a non-generative RAG context preview. Chat,
-leads and integrations remain reserved for later phases.
+embeddings, pgvector retrieval and a non-generative RAG context preview. Phase 5
+adds configurable private agents, persisted dashboard conversations, grounded
+Gemini responses and a test chat. Leads, tools and public integrations remain
+reserved for later phases.
 
 ## Requisitos
 
@@ -177,6 +179,39 @@ Endpoints de Fase 4:
 
 Los endpoints de search y RAG preview nunca devuelven embeddings al navegador.
 
+## AI Agent y Chat (Fase 5)
+
+Cada empresa puede configurar varios agentes con nombre, rol, objetivo, tono,
+idioma, instrucciones, modelo, estado y límites de generación. La pantalla
+`/dashboard/companies/[id]/agent` permite guardar la configuración y probar un
+agente privado desde el dashboard; todavía no existe un canal público.
+
+El flujo de chat es `pregunta -> embedding/retrieval -> contexto RAG ->
+instrucciones del agente -> Gemini Interactions API -> respuesta visible ->
+persistencia`. La aplicación usa `google-genai`, `store=false` y mantiene el
+historial reciente en PostgreSQL/Supabase, con `CHAT_HISTORY_MAX_MESSAGES=12`.
+No depende de `previous_interaction_id` como fuente de verdad. La integración
+encapsulada no persiste ni devuelve reasoning, thoughts, trazas ni respuestas
+raw del proveedor.
+
+Las instrucciones confiables y el bloque `RETRIEVED KNOWLEDGE` se envían como
+secciones estructuralmente separadas. El contenido recuperado se considera
+datos no confiables y nunca instrucciones. Si no hay contexto relevante, el
+backend devuelve un fallback seguro y no llama al modelo generativo. Las
+respuestas persistidas guardan solo texto visible, IDs de chunks, fuentes y
+usage/latencia segura cuando Gemini la entrega.
+
+Endpoints principales:
+
+- `POST/GET/PATCH .../companies/{company_id}/agents` — configuración tenant-aware.
+- `POST .../agents/{agent_id}/conversations` — crea sesiones dashboard.
+- `GET .../conversations/{conversation_id}/messages` — historial visible.
+- `POST .../conversations/{conversation_id}/messages` — respuesta no streaming.
+- `POST .../conversations/{conversation_id}/messages/stream` — SSE con persistencia al completar.
+
+Fase 5 no implementa leads, lead qualification, tool calling, CRM, Calendar,
+WhatsApp ni widget. El widget embebible pertenece a Fase 8.
+
 ## Migrations y RLS
 
 Migration `0003_knowledge_ingestion` agrega las tablas tenant-aware de Knowledge
@@ -186,6 +221,11 @@ real sin un proyecto Supabase de desarrollo. Migration `0004_embeddings_rag`
 habilita la extensión `vector`, agrega `vector(768)` y el índice HNSW; no llama
 a Gemini durante la migración. SQLite se usa solo para tests que no ejecutan
 operadores vectoriales.
+
+Migration `0005_ai_agents_chat` agrega agentes, conversaciones y mensajes con
+RLS tenant-aware. Los usuarios autenticados solo pueden insertar mensajes de
+rol `user`; las respuestas del agente se persisten desde el backend con el
+rol de servicio.
 
 Migration `0002_multitenancy` crea `profiles`, `organizations`,
 `organization_members` y `companies`, con constraints, índices, RLS y policies.
@@ -216,7 +256,7 @@ secretos; nunca las copies dentro de la imagen.
 Cada fase se desarrolla en una rama propia. Esta implementación corresponde a:
 
 ```text
-feature/fase-4-rag
+feature/fase-5-ai-agent-chat
 ```
 
 Las siguientes ramas previstas están documentadas en `Docs/AGENTS.md`; no se
@@ -226,9 +266,9 @@ crean por adelantado. El flujo recomendado para publicar esta fase es:
 git status
 git branch --show-current
 git log --oneline -10
-git push -u origin feature/fase-3-knowledge-ingestion
+git push -u origin feature/fase-5-ai-agent-chat
 ```
 
-Después, abre un Pull Request desde `feature/fase-3-knowledge-ingestion` hacia `main`,
+Después, abre un Pull Request desde `feature/fase-5-ai-agent-chat` hacia `main`,
 revisa los checks automatizados y realiza el merge mediante el flujo protegido
 del repositorio. Este agente no hace push ni crea Pull Requests.

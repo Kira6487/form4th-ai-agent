@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     rag_default_top_k: int = Field(default=5, ge=1, le=20)
     rag_max_top_k: int = Field(default=20, ge=1, le=100)
     rag_min_similarity: float = Field(default=0.55, ge=0, le=1)
+    chat_history_max_messages: int = Field(default=12, ge=1, le=50)
+    chat_max_message_chars: int = Field(default=4000, ge=100, le=20000)
+    rag_max_context_chars: int = Field(default=16000, ge=1000, le=100000)
+    ai_default_temperature: float = Field(default=0.2, ge=0, le=1)
 
     allowed_origins: str = "http://localhost:3000"
 
