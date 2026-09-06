@@ -57,6 +57,9 @@ class KnowledgeSourceRead(BaseModel):
     updated_at: datetime
     documents_count: int = 0
     chunks_count: int = 0
+    embedded_chunks_count: int = 0
+    pending_embeddings_count: int = 0
+    failed_embeddings_count: int = 0
 
 
 class KnowledgeIngestionRunRead(BaseModel):
@@ -107,6 +110,11 @@ class KnowledgeChunkRead(BaseModel):
     approx_token_count: int | None
     metadata: dict[str, Any] = Field(validation_alias=AliasChoices("chunk_metadata", "metadata"))
     is_active: bool
+    embedding_model: str | None = None
+    embedding_dimensions: int | None = None
+    embedded_at: datetime | None = None
+    embedding_status: Literal["pending", "processing", "ready", "failed"] = "pending"
+    embedding_error: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -128,3 +136,49 @@ class PaginatedChunks(BaseModel):
 class KnowledgeStatusRead(BaseModel):
     source: KnowledgeSourceRead
     run: KnowledgeIngestionRunRead | None = None
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=2, max_length=4000)
+    top_k: int | None = Field(default=None, ge=1, le=100)
+    min_similarity: float | None = Field(default=None, ge=0, le=1)
+
+
+class KnowledgeSearchResult(BaseModel):
+    chunk_id: UUID
+    document_id: UUID
+    source_id: UUID
+    title: str
+    content: str
+    similarity: float
+    source_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class KnowledgeSearchResponse(BaseModel):
+    query: str
+    results: list[KnowledgeSearchResult]
+
+
+class RagPreviewResponse(BaseModel):
+    query: str
+    context: str
+    citations: list[KnowledgeSearchResult]
+
+
+class EmbeddingIndexRequest(BaseModel):
+    source_id: UUID | None = None
+    limit: int | None = Field(default=None, ge=1, le=100)
+
+
+class EmbeddingIndexResponse(BaseModel):
+    total: int
+    processed: int
+    embedded: int
+    pending: int
+    failed: int
+
+
+class EmbeddingReindexRequest(BaseModel):
+    force: bool = False
+    limit: int | None = Field(default=None, ge=1, le=100)

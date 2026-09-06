@@ -13,6 +13,8 @@ from app.schemas.knowledge import (
     KnowledgeIngestionRunRead,
     KnowledgeSourceRead,
     KnowledgeStatusRead,
+    KnowledgeSearchRequest, KnowledgeSearchResponse, KnowledgeSearchResult, RagPreviewResponse,
+    EmbeddingIndexRequest, EmbeddingIndexResponse, EmbeddingReindexRequest,
     ManualSourceCreate,
     PaginatedChunks,
     PaginatedDocuments,
@@ -32,6 +34,10 @@ from app.services.knowledge_service import (
     poll_website_source,
     reindex_source,
 )
+from app.services.ai.embedding_service import EmbeddingConfigurationError, EmbeddingProviderError
+from app.services.embedding_index_service import index_pending_embeddings, reset_source_embeddings
+from app.services.rag.context_builder import build_rag_context
+from app.services.rag.retrieval_service import VectorDatabaseRequiredError, search_knowledge
 
 router = APIRouter(prefix="/organizations/{organization_id}/companies/{company_id}/knowledge", tags=["knowledge"])
 
@@ -49,6 +55,9 @@ def _source_read(source) -> KnowledgeSourceRead:
         "last_indexed_at": source.last_indexed_at, "created_by": source.created_by,
         "created_at": source.created_at, "updated_at": source.updated_at,
         "documents_count": getattr(source, "documents_count", 0), "chunks_count": getattr(source, "chunks_count", 0),
+        "embedded_chunks_count": getattr(source, "embedded_chunks_count", 0),
+        "pending_embeddings_count": getattr(source, "pending_embeddings_count", 0),
+        "failed_embeddings_count": getattr(source, "failed_embeddings_count", 0),
     })
 
 
@@ -146,3 +155,58 @@ async def chunks(document_id: UUID, company_id: UUID, context: OrganizationConte
     if not items and total == 0:
         raise HTTPException(status_code=404, detail="Document not found")
     return PaginatedChunks(items=[KnowledgeChunkRead.model_validate(item) for item in items], page=page, page_size=page_size, total=total)
+
+
+def _retrieval_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, VectorDatabaseRequiredError):
+        return HTTPException(status_code=503, detail="Semantic retrieval requires PostgreSQL with pgvector")
+    if isinstance(exc, EmbeddingConfigurationError):
+        return HTTPException(status_code=503, detail="Embedding service is not configured")
+    if isinstance(exc, EmbeddingProviderError):
+        return HTTPException(status_code=503, detail="Embedding service is temporarily unavailable")
+    return HTTPException(status_code=503, detail="Knowledge search is temporarily unavailable")
+
+
+def _search_result(item) -> KnowledgeSearchResult:
+    return KnowledgeSearchResult(chunk_id=item.chunk_id, document_id=item.document_id, source_id=item.source_id, title=item.title, content=item.content, similarity=round(item.similarity, 6), source_url=item.source_url, metadata=item.metadata)
+
+
+@router.post("/embeddings/index", response_model=EmbeddingIndexResponse)
+async def index_embeddings(data: EmbeddingIndexRequest, company_id: UUID, context: OrganizationContext = Depends(require_organization_role("owner", "admin")), session: AsyncSession = Depends(get_db_session)) -> EmbeddingIndexResponse:
+    if await company_for_source(session, context.organization.id, company_id) is None:
+        raise HTTPException(status_code=404, detail="Company not found")
+    if data.source_id:
+        await _source(context, session, company_id, data.source_id)
+    result = await index_pending_embeddings(session, context.organization.id, company_id, data.source_id, data.limit)
+    return EmbeddingIndexResponse(total=result.total, processed=result.processed, embedded=result.embedded, pending=result.pending, failed=result.failed)
+
+
+@router.post("/sources/{source_id}/embeddings/reindex", response_model=EmbeddingIndexResponse)
+async def reindex_embeddings(source_id: UUID, data: EmbeddingReindexRequest, company_id: UUID, context: OrganizationContext = Depends(require_organization_role("owner", "admin")), session: AsyncSession = Depends(get_db_session)) -> EmbeddingIndexResponse:
+    await _source(context, session, company_id, source_id)
+    await reset_source_embeddings(session, context.organization.id, company_id, source_id, data.force)
+    result = await index_pending_embeddings(session, context.organization.id, company_id, source_id, data.limit)
+    return EmbeddingIndexResponse(total=result.total, processed=result.processed, embedded=result.embedded, pending=result.pending, failed=result.failed)
+
+
+@router.post("/search", response_model=KnowledgeSearchResponse)
+async def search(data: KnowledgeSearchRequest, company_id: UUID, context: OrganizationContext = Depends(require_organization_member()), session: AsyncSession = Depends(get_db_session)) -> KnowledgeSearchResponse:
+    if await company_for_source(session, context.organization.id, company_id) is None:
+        raise HTTPException(status_code=404, detail="Company not found")
+    try:
+        items = await search_knowledge(session, context.organization.id, company_id, data.query, data.top_k, data.min_similarity)
+    except Exception as exc:
+        raise _retrieval_error(exc) from exc
+    return KnowledgeSearchResponse(query=data.query, results=[_search_result(item) for item in items])
+
+
+@router.post("/rag-preview", response_model=RagPreviewResponse)
+async def rag_preview(data: KnowledgeSearchRequest, company_id: UUID, context: OrganizationContext = Depends(require_organization_member()), session: AsyncSession = Depends(get_db_session)) -> RagPreviewResponse:
+    if await company_for_source(session, context.organization.id, company_id) is None:
+        raise HTTPException(status_code=404, detail="Company not found")
+    try:
+        items = await search_knowledge(session, context.organization.id, company_id, data.query, data.top_k, data.min_similarity)
+    except Exception as exc:
+        raise _retrieval_error(exc) from exc
+    citations = [_search_result(item) for item in items]
+    return RagPreviewResponse(query=data.query, context=build_rag_context(items), citations=citations)
