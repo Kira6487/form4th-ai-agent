@@ -1,7 +1,10 @@
 import asyncio
+from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from sqlalchemy import select
 
 from app.core.auth import get_current_user
@@ -10,7 +13,7 @@ from app.models import Company, KnowledgeChunk, KnowledgeDocument, KnowledgeSour
 from app.schemas.auth import AuthenticatedUser
 from app.core.config import Settings
 from app.services.ingestion.firecrawl_provider import WebCrawlerProvider
-from app.services.knowledge_service import create_website_source, poll_website_source, reindex_source, source_with_counts
+from app.services.knowledge_service import _extract_pdf_text, create_website_source, poll_website_source, reindex_source, source_with_counts
 from app.services.ingestion.chunker import chunk_content
 from app.services.ingestion.hashing import content_hash
 from app.services.ingestion.normalizer import normalize_content
@@ -71,6 +74,26 @@ def test_pdf_validation_checks_magic_mime_and_size() -> None:
         validate_pdf_bytes("file.pdf", "application/pdf", b"not a pdf", 100)
     with pytest.raises(ValueError):
         validate_pdf_bytes("file.pdf", "application/pdf", b"%PDF-1.7 body", 5)
+
+
+def test_pypdf_extracts_text_and_empty_pdf_is_detectable() -> None:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=300)
+    font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")})
+    font_ref = writer._add_object(font)
+    page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font_ref})})
+    stream = DecodedStreamObject()
+    stream.set_data(b"BT /F1 12 Tf 20 200 Td (Hello PDF) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    buffer = BytesIO()
+    writer.write(buffer)
+    assert _extract_pdf_text(buffer.getvalue()) == "Hello PDF"
+
+    empty = PdfWriter()
+    empty.add_blank_page(width=300, height=300)
+    empty_buffer = BytesIO()
+    empty.write(empty_buffer)
+    assert _extract_pdf_text(empty_buffer.getvalue()) == ""
 
 
 def test_manual_source_is_tenant_scoped_and_reindex_preserves_previous(tenant_client, monkeypatch) -> None:
