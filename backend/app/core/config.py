@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = Field(default=None, repr=False)
     database_url: str | None = Field(default=None, repr=False)
     firecrawl_api_key: str | None = Field(default=None, repr=False)
+    firecrawl_max_pages: int = Field(default=50, ge=1, le=100)
+    max_pdf_size_mb: int = Field(default=20, ge=1, le=100)
+    chunk_target_approx_tokens: int = Field(default=800, ge=100, le=5000)
+    chunk_overlap_approx_tokens: int = Field(default=100, ge=0, le=1000)
+    supabase_storage_bucket: str = "knowledge-files"
 
     allowed_origins: str = "http://localhost:3000"
 

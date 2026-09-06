@@ -18,6 +18,7 @@ class Organization(Base):
 
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     companies: Mapped[list["Company"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    knowledge_sources: Mapped[list["KnowledgeSource"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
 
 
 class OrganizationMember(Base):

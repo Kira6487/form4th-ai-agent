@@ -25,3 +25,4 @@ class Company(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     organization = relationship("Organization", back_populates="companies")
+    knowledge_sources = relationship("KnowledgeSource", back_populates="company", cascade="all, delete-orphan")
