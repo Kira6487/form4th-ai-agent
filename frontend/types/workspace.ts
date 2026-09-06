@@ -31,7 +31,9 @@ export type KnowledgeSource = {
   status: "pending" | "processing" | "ready" | "failed" | "disabled"; last_error: string | null;
   last_indexed_at: string | null; created_by: string | null; created_at: string; updated_at: string;
   documents_count: number; chunks_count: number;
+  embedded_chunks_count: number; pending_embeddings_count: number; failed_embeddings_count: number;
 };
 export type KnowledgeDocument = { id: string; source_id: string; ingestion_run_id: string | null; title: string; content: string; content_type: string; language: string | null; source_url: string | null; content_hash: string; metadata: Record<string, unknown>; is_active: boolean; created_at: string; updated_at: string };
-export type KnowledgeChunk = { id: string; source_id: string; document_id: string; ingestion_run_id: string | null; chunk_index: number; content: string; content_hash: string; approx_token_count: number | null; metadata: Record<string, unknown>; is_active: boolean; created_at: string; updated_at: string };
+export type KnowledgeChunk = { id: string; source_id: string; document_id: string; ingestion_run_id: string | null; chunk_index: number; content: string; content_hash: string; approx_token_count: number | null; metadata: Record<string, unknown>; is_active: boolean; embedding_model: string | null; embedding_dimensions: number | null; embedded_at: string | null; embedding_status: "pending" | "processing" | "ready" | "failed"; embedding_error: string | null; created_at: string; updated_at: string };
+export type KnowledgeSearchResult = { chunk_id: string; document_id: string; source_id: string; title: string; content: string; similarity: number; source_url: string | null; metadata: Record<string, unknown> };
 export type KnowledgePage<T> = { items: T[]; page: number; page_size: number; total: number };

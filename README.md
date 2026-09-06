@@ -3,7 +3,8 @@
 Monorepo for the FORM4TH AI Agent platform. Phases 1 and 2 provide a Next.js
 foundation, Supabase Auth integration, a modular FastAPI API, PostgreSQL
 connectivity through SQLAlchemy/Alembic, tenant authorization, and basic
-company management, and Phase 3 knowledge ingestion. Embeddings, RAG, chat,
+company management. Phase 3 adds knowledge ingestion and Phase 4 adds Gemini
+embeddings, pgvector retrieval and a non-generative RAG context preview. Chat,
 leads and integrations remain reserved for later phases.
 
 ## Requisitos
@@ -114,8 +115,9 @@ npm run typecheck
 npm run build
 ```
 
-El test unitario de Gemini usa un cliente falso y no consume API. El smoke test
-real solo se ejecuta al llamar al endpoint con `GEMINI_API_KEY` configurada.
+Los tests unitarios de Gemini y embeddings usan clientes falsos y no consumen
+API. Los smoke tests reales solo se ejecutan con `GEMINI_API_KEY` y
+`DATABASE_URL` configuradas.
 
 ## Authentication y multi-tenancy
 
@@ -154,15 +156,36 @@ la version anterior permanece activa.
 
 Knowledge esta disponible en `/dashboard/knowledge` y
 `/dashboard/companies/[id]/knowledge`, con altas, estado/polling, reindex,
-disable y previews paginados de documentos/chunks. No se crean embeddings,
-vectores ni busqueda en esta fase.
+disable y previews paginados de documentos/chunks. Los chunks nuevos quedan
+`pending` hasta que un owner/admin ejecuta indexación por lotes. Fase 4 usa
+`gemini-embedding-2` con 768 dimensiones, la cadena documental
+`title: ... | text: ...` y la cadena de consulta
+`task: search result | query: ...`; se configura `EMBEDDING_BATCH_SIZE` (50).
+La migración `0004_embeddings_rag` habilita pgvector, agrega metadatos de
+modelo/estado y crea un índice HNSW cosine. El retrieval filtra primero por
+`organization_id`, `company_id`, fuente/documento/chunk activos y estado
+`ready`, y aplica `RAG_MIN_SIMILARITY` antes de devolver resultados.
+
+Endpoints de Fase 4:
+
+- `POST .../knowledge/embeddings/index` — indexa un lote de chunks pendientes.
+- `POST .../knowledge/sources/{source_id}/embeddings/reindex` — re-usa o
+  re-embebe una fuente (`force` permite regenerar todo).
+- `POST .../knowledge/search` — devuelve top-K chunks con similitud y citas.
+- `POST .../knowledge/rag-preview` — construye contexto/citas sin llamar a un
+  modelo generativo.
+
+Los endpoints de search y RAG preview nunca devuelven embeddings al navegador.
 
 ## Migrations y RLS
 
 Migration `0003_knowledge_ingestion` agrega las tablas tenant-aware de Knowledge
 (`knowledge_sources`, `knowledge_ingestion_runs`, `knowledge_documents` y
 `knowledge_chunks`) con indices y policies RLS. No se declara validacion RLS
-real sin un proyecto Supabase de desarrollo.
+real sin un proyecto Supabase de desarrollo. Migration `0004_embeddings_rag`
+habilita la extensión `vector`, agrega `vector(768)` y el índice HNSW; no llama
+a Gemini durante la migración. SQLite se usa solo para tests que no ejecutan
+operadores vectoriales.
 
 Migration `0002_multitenancy` crea `profiles`, `organizations`,
 `organization_members` y `companies`, con constraints, índices, RLS y policies.
@@ -174,7 +197,7 @@ alembic upgrade head
 
 La estrategia reproducible para verificar RLS con Supabase está en
 `supabase/tests/README.md`. No se declara ejecutada sin un proyecto Supabase
-real. pgvector y embeddings pertenecen a fases posteriores.
+real.
 
 ## Docker
 
@@ -193,7 +216,7 @@ secretos; nunca las copies dentro de la imagen.
 Cada fase se desarrolla en una rama propia. Esta implementación corresponde a:
 
 ```text
-feature/fase-3-knowledge-ingestion
+feature/fase-4-rag
 ```
 
 Las siguientes ramas previstas están documentadas en `Docs/AGENTS.md`; no se

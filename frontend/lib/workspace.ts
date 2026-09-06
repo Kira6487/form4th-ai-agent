@@ -1,5 +1,5 @@
 import { apiFetch } from "../services/api/client";
-import type { Company, CompanyInput, CompanyUpdate, KnowledgeChunk, KnowledgeDocument, KnowledgePage, KnowledgeSource, Organization } from "../types/workspace";
+import type { Company, CompanyInput, CompanyUpdate, KnowledgeChunk, KnowledgeDocument, KnowledgePage, KnowledgeSearchResult, KnowledgeSource, Organization } from "../types/workspace";
 
 export function getOrganizations(): Promise<Organization[]> {
   return apiFetch<Organization[]>("/api/v1/organizations");
@@ -48,3 +48,6 @@ export const disableKnowledgeSource = (o: string, c: string, s: string) => apiFe
 export const getKnowledgeDocuments = (o: string, c: string, s: string) => apiFetch<KnowledgePage<KnowledgeDocument>>(`${knowledgePath(o, c)}/sources/${s}/documents`);
 export const getKnowledgeChunks = (o: string, c: string, d: string) => apiFetch<KnowledgePage<KnowledgeChunk>>(`${knowledgePath(o, c)}/documents/${d}/chunks`);
 export const getKnowledgeStatus = (o: string, c: string, s: string) => apiFetch<{ source: KnowledgeSource }>(`${knowledgePath(o, c)}/sources/${s}/status`);
+export const indexKnowledgeEmbeddings = (o: string, c: string, sourceId?: string, limit?: number) => apiFetch<{ total: number; processed: number; embedded: number; pending: number; failed: number }>(`${knowledgePath(o, c)}/embeddings/index`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: sourceId, limit }) });
+export const reindexKnowledgeEmbeddings = (o: string, c: string, s: string, force = false) => apiFetch<{ total: number; processed: number; embedded: number; pending: number; failed: number }>(`${knowledgePath(o, c)}/sources/${s}/embeddings/reindex`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force }) });
+export const searchKnowledge = (o: string, c: string, query: string, top_k = 5) => apiFetch<{ query: string; results: KnowledgeSearchResult[] }>(`${knowledgePath(o, c)}/search`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, top_k }) });
