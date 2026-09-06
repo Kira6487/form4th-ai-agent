@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -11,10 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.models.agent import AIAgent, Conversation, Message
 from app.models.company import Company
+from app.models.lead import Lead
 from app.services.agent_prompt_builder import build_agent_system_instruction, build_chat_input
 from app.services.ai.conversation_service import ConversationProviderError, GeminiConversationService
+from app.services.leads.lead_detection_service import LeadDetectionService
 from app.services.rag.context_builder import build_rag_context
 from app.services.rag.retrieval_service import RetrievedChunk, search_knowledge
+
+logger = logging.getLogger(__name__)
 
 class ChatError(RuntimeError):
     def __init__(self, code: str, message: str):
@@ -29,6 +34,7 @@ class ChatResult:
     answer: str
     sources: list[dict]
     model: str | None
+    lead: Lead | None = None
 
 
 _locks: dict[UUID, asyncio.Lock] = {}
@@ -49,6 +55,42 @@ def _fallback(language: str) -> str:
 
 def _sources(items: list[RetrievedChunk]) -> list[dict]:
     return [{"source_id": str(item.source_id), "document_id": str(item.document_id), "chunk_id": str(item.chunk_id), "title": item.title, "url": item.source_url} for item in items]
+
+
+def _lead_payload(lead: Lead | None) -> dict[str, str] | None:
+    if lead is None:
+        return None
+    return {"id": str(lead.id), "status": lead.status}
+
+
+async def _detect_lead_safely(
+    session: AsyncSession,
+    *,
+    conversation: Conversation,
+    user_message: Message,
+    history: list[tuple[str, str]],
+    agent_model: str,
+    settings: Settings,
+    detector: LeadDetectionService | None,
+) -> Lead | None:
+    log_context = {
+        "organization_id": str(conversation.organization_id),
+        "company_id": str(conversation.company_id),
+        "conversation_id": str(conversation.id),
+        "agent_id": str(conversation.agent_id),
+    }
+    try:
+        return await (detector or LeadDetectionService(settings)).process(session=session, conversation=conversation, latest_message=user_message, history=history, agent_model=agent_model)
+    except Exception as exc:
+        await session.rollback()
+        logger.warning(
+            "lead_detection_failed",
+            extra={
+                **log_context,
+                "error_type": type(exc).__name__,
+            },
+        )
+        return None
 
 
 async def _conversation(session: AsyncSession, organization_id: UUID, company_id: UUID, conversation_id: UUID) -> tuple[Conversation, AIAgent] | None:
@@ -95,6 +137,7 @@ async def answer_message(
     settings: Settings | None = None,
     retrieval: Callable[..., Awaitable[list[RetrievedChunk]]] = search_knowledge,
     provider: GeminiConversationService | None = None,
+    lead_detector: LeadDetectionService | None = None,
 ) -> ChatResult:
     settings = settings or get_settings()
     if len(user_message) > settings.chat_max_message_chars:
@@ -109,7 +152,8 @@ async def answer_message(
         if conversation.status != "active":
             raise ChatError("conversation_closed", "Conversation is closed")
         history = await _history(session, conversation.id, settings.chat_history_max_messages)
-        session.add(Message(organization_id=organization_id, company_id=company_id, conversation_id=conversation.id, role="user", content=user_message, status="completed"))
+        user_record = Message(organization_id=organization_id, company_id=company_id, conversation_id=conversation.id, role="user", content=user_message, status="completed")
+        session.add(user_record)
         await session.flush()
         try:
             items = await retrieval(session, organization_id, company_id, user_message, settings=settings)
@@ -136,11 +180,12 @@ async def answer_message(
         conversation.last_message_at = datetime.now(timezone.utc)
         await session.commit()
         await session.refresh(message)
-        return ChatResult(conversation, message, answer, sources, generated.model if generated else None)
+        lead = await _detect_lead_safely(session, conversation=conversation, user_message=user_record, history=history, agent_model=agent.model, settings=settings, detector=lead_detector)
+        return ChatResult(conversation, message, answer, sources, generated.model if generated else None, lead)
 
 
 async def stream_message(
-    session: AsyncSession, organization_id: UUID, company_id: UUID, conversation_id: UUID, user_message: str, settings: Settings | None = None, retrieval: Callable[..., Awaitable[list[RetrievedChunk]]] = search_knowledge, provider: GeminiConversationService | None = None,
+    session: AsyncSession, organization_id: UUID, company_id: UUID, conversation_id: UUID, user_message: str, settings: Settings | None = None, retrieval: Callable[..., Awaitable[list[RetrievedChunk]]] = search_knowledge, provider: GeminiConversationService | None = None, lead_detector: LeadDetectionService | None = None,
 ) -> AsyncIterator[tuple[str, Any]]:
     """Yield visible text chunks and persist only after a complete stream."""
     settings = settings or get_settings()
@@ -182,8 +227,10 @@ async def stream_message(
             answer = "".join(answer_parts).strip()
             if not answer:
                 raise ChatError("provider_unavailable", "AI provider returned no visible answer")
-        session.add(Message(organization_id=organization_id, company_id=company_id, conversation_id=conversation.id, role="user", content=user_message, status="completed"))
+        user_record = Message(organization_id=organization_id, company_id=company_id, conversation_id=conversation.id, role="user", content=user_message, status="completed")
+        session.add(user_record)
         session.add(Message(organization_id=organization_id, company_id=company_id, conversation_id=conversation.id, role="assistant", content=answer, retrieved_chunk_ids=[str(item.chunk_id) for item in items], sources=sources, provider=conversation_provider.provider_name if items else None, model=agent.model if items else None, status="completed"))
         conversation.last_message_at = datetime.now(timezone.utc)
         await session.commit()
-        yield "done", {"sources": sources, "model": agent.model if items else None}
+        lead = await _detect_lead_safely(session, conversation=conversation, user_message=user_record, history=history, agent_model=agent.model, settings=settings, detector=lead_detector)
+        yield "done", {"sources": sources, "model": agent.model if items else None, "lead": _lead_payload(lead)}

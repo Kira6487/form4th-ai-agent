@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.lead import LeadSignal
+
 AgentStatus = Literal["draft", "active", "disabled"]
 
 
@@ -128,3 +130,4 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[ChatSource]
     model: str | None
+    lead: LeadSignal | None = None

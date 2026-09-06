@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import OrganizationContext, require_organization_member
 from app.db.session import get_db_session
 from app.schemas.agent import ChatMessageCreate, ChatResponse, ChatSource, ConversationCreate, ConversationRead, MessageRead
+from app.schemas.lead import LeadSignal
 from app.services.agent_service import get_agent
 from app.services.chat_service import ChatError, answer_message, create_conversation, get_conversation, list_conversations, list_messages, stream_message
 
@@ -56,7 +57,7 @@ async def send_message(data: ChatMessageCreate, conversation_id: UUID, company_i
         result = await answer_message(session, context.organization.id, company_id, conversation_id, data.message)
     except ChatError as exc:
         raise _chat_error(exc) from exc
-    return ChatResponse(conversation_id=result.conversation.id, message_id=result.message.id, answer=result.answer, sources=[ChatSource(**source) for source in result.sources], model=result.model)
+    return ChatResponse(conversation_id=result.conversation.id, message_id=result.message.id, answer=result.answer, sources=[ChatSource(**source) for source in result.sources], model=result.model, lead=LeadSignal(id=result.lead.id, status=result.lead.status) if result.lead else None)
 
 
 @router.post("/conversations/{conversation_id}/messages/stream")

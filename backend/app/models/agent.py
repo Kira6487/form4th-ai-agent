@@ -61,6 +61,7 @@ class Conversation(Base):
 
     agent = relationship("AIAgent", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.created_at")
+    lead = relationship("Lead", back_populates="conversation", uselist=False)
 
 
 class Message(Base):

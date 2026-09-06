@@ -6,8 +6,8 @@ connectivity through SQLAlchemy/Alembic, tenant authorization, and basic
 company management. Phase 3 adds knowledge ingestion and Phase 4 adds Gemini
 embeddings, pgvector retrieval and a non-generative RAG context preview. Phase 5
 adds configurable private agents, persisted dashboard conversations, grounded
-Gemini responses and a test chat. Leads, tools and public integrations remain
-reserved for later phases.
+Gemini responses and a test chat. Phase 6 adds tenant-scoped commercial leads
+and qualification; tools and public integrations remain reserved for later phases.
 
 ## Requisitos
 
@@ -212,6 +212,31 @@ Endpoints principales:
 Fase 5 no implementa leads, lead qualification, tool calling, CRM, Calendar,
 WhatsApp ni widget. El widget embebible pertenece a Fase 8.
 
+## Leads e intención comercial (Fase 6)
+
+El flujo de Fase 6 es `Conversation -> Intent -> Lead -> Qualification`. El
+classifier se ejecuta únicamente después de un pre-filtro determinístico para
+señales comerciales, datos de contacto o una respuesta a una solicitud de
+contacto. Usa Gemini Interactions con `response_format` JSON Schema validado por
+Pydantic; no se parsea JSON libre con regex.
+
+Los intents iniciales son `general_inquiry`, `purchase_interest`,
+`request_quote`, `request_demo`, `contact_request`, `appointment_interest` y
+`other_commercial`. Los estados son `new`, `qualified`, `contacted`,
+`converted` y `lost`. La fase crea automáticamente `new` y `qualified`; los
+cambios posteriores se administran manualmente desde el dashboard.
+
+Una conversación puede tener un único lead principal. Un lead califica cuando
+existe intención comercial, interés comprensible y un email o teléfono válido.
+El consentimiento no se infiere solo por recibir un email o teléfono: requiere
+una solicitud explícita de contacto o una respuesta con datos a una solicitud
+contextual del agente. El origen del chat interno es `dashboard_test`.
+
+La detección es secundaria: si Gemini falla, la respuesta y conversación se
+conservan y no se crea un lead falso. Fase 6 no envía emails, mensajes ni
+notificaciones externas. El módulo administrativo está disponible en
+`/dashboard/companies/[id]/leads`.
+
 ## Migrations y RLS
 
 Migration `0003_knowledge_ingestion` agrega las tablas tenant-aware de Knowledge
@@ -226,6 +251,9 @@ Migration `0005_ai_agents_chat` agrega agentes, conversaciones y mensajes con
 RLS tenant-aware. Los usuarios autenticados solo pueden insertar mensajes de
 rol `user`; las respuestas del agente se persisten desde el backend con el
 rol de servicio.
+
+Migration `0006_leads` agrega leads con constraint único por conversación,
+proveniencia hacia conversación/agente/mensaje y RLS tenant-aware.
 
 Migration `0002_multitenancy` crea `profiles`, `organizations`,
 `organization_members` y `companies`, con constraints, índices, RLS y policies.
@@ -256,7 +284,7 @@ secretos; nunca las copies dentro de la imagen.
 Cada fase se desarrolla en una rama propia. Esta implementación corresponde a:
 
 ```text
-feature/fase-5-ai-agent-chat
+feature/fase-6-leads
 ```
 
 Las siguientes ramas previstas están documentadas en `Docs/AGENTS.md`; no se
@@ -266,9 +294,9 @@ crean por adelantado. El flujo recomendado para publicar esta fase es:
 git status
 git branch --show-current
 git log --oneline -10
-git push -u origin feature/fase-5-ai-agent-chat
+git push -u origin feature/fase-6-leads
 ```
 
-Después, abre un Pull Request desde `feature/fase-5-ai-agent-chat` hacia `main`,
+Después, abre un Pull Request desde `feature/fase-6-leads` hacia `main`,
 revisa los checks automatizados y realiza el merge mediante el flujo protegido
 del repositorio. Este agente no hace push ni crea Pull Requests.

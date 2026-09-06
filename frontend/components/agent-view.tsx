@@ -20,6 +20,7 @@ export function AgentView({ companyId }: { companyId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [leadStatus, setLeadStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -42,7 +43,7 @@ export function AgentView({ companyId }: { companyId: string }) {
       setMessages((current) => [...current, { id: `local-${Date.now()}`, conversation_id: id, role: "user", content: text, retrieved_chunk_ids: null, sources: null, provider: null, model: null, latency_ms: null, input_tokens: null, output_tokens: null, status: "completed", created_at: new Date().toISOString() }]);
       const assistantId = `stream-${Date.now()}`;
       setMessages((current) => [...current, { id: assistantId, conversation_id: id, role: "assistant", content: "", retrieved_chunk_ids: null, sources: null, provider: "gemini", model: null, latency_ms: null, input_tokens: null, output_tokens: null, status: "completed", created_at: new Date().toISOString() }]);
-      await streamChatMessage(organization.id, companyId, id, text, (part) => setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content + part } : message)), (sources, model) => setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, sources, retrieved_chunk_ids: sources.map((source) => source.chunk_id), model } : message)));
+      await streamChatMessage(organization.id, companyId, id, text, (part) => setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content + part } : message)), (sources, model, lead) => { setLeadStatus(lead?.status ?? null); setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, sources, retrieved_chunk_ids: sources.map((source) => source.chunk_id), model } : message)); });
     } catch (caught) { setInput(text); setError(caught instanceof Error ? caught.message : "Unable to send message."); } finally { setSending(false); }
   }
   function handleKey(event: KeyboardEvent<HTMLTextAreaElement>) { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }
@@ -65,7 +66,7 @@ export function AgentView({ companyId }: { companyId: string }) {
           <button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Save agent"}</button>
         </form>
         <div className="chat-panel">
-          <div className="chat-panel-heading"><div><h2>Test your agent</h2><p className="content-subtitle">Answers use this company&apos;s authorized knowledge and show their sources.</p></div>{conversationId && <small>Conversation active</small>}</div>
+          <div className="chat-panel-heading"><div><h2>Test your agent</h2><p className="content-subtitle">Answers use this company&apos;s authorized knowledge and show their sources.</p></div><div>{conversationId && <small>Conversation active</small>}{leadStatus && <small className="lead-signal">Lead detected · {leadStatus}</small>}</div></div>
           <div className="chat-messages" ref={scrollRef}>
             {messages.length === 0 && <div className="chat-empty">Ask a question to test the configured agent.</div>}
             {messages.map((message) => <article className={`chat-message chat-${message.role}`} key={message.id}><div className="chat-message-meta"><strong>{message.role === "user" ? "You" : agent?.name ?? "Agent"}</strong><time>{new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div><p>{message.content}</p>{message.sources?.length ? <div className="source-chips"><span>Sources</span>{message.sources.map((source: ChatSource) => <span className="source-chip" key={source.chunk_id}>{source.title}</span>)}</div> : null}</article>)}

@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     chat_max_message_chars: int = Field(default=4000, ge=100, le=20000)
     rag_max_context_chars: int = Field(default=16000, ge=1000, le=100000)
     ai_default_temperature: float = Field(default=0.2, ge=0, le=1)
+    lead_detection_enabled: bool = True
+    lead_min_confidence: float = Field(default=0.70, ge=0, le=1)
+    lead_auto_qualify: bool = True
+    gemini_classifier_model: str | None = None
 
     allowed_origins: str = "http://localhost:3000"
 

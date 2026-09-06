@@ -3,6 +3,7 @@ from app.models.company import Company
 from app.models.organization import Organization, OrganizationMember
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument, KnowledgeIngestionRun, KnowledgeSource
 from app.models.agent import AIAgent, Conversation, Message
+from app.models.lead import Lead
 
 __all__ = [
     "Base",
@@ -16,4 +17,5 @@ __all__ = [
     "AIAgent",
     "Conversation",
     "Message",
+    "Lead",
 ]
