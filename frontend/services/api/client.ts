@@ -1,9 +1,23 @@
+import { getSupabaseBrowserClient } from "../../lib/supabase/client";
+
 const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  let accessToken: string | undefined;
+  try {
+    const { data } = await getSupabaseBrowserClient().auth.getSession();
+    accessToken = data.session?.access_token;
+  } catch {
+    // Public foundation endpoints remain usable without Supabase configuration.
+  }
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: { Accept: "application/json", ...init?.headers },
+    headers: {
+      Accept: "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...init?.headers,
+    },
     cache: "no-store",
   });
 
