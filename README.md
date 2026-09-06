@@ -1,10 +1,10 @@
 # FORM4TH AI Agent
 
-Foundation monorepo for the FORM4TH AI Agent platform. Phase 1 provides a
-Next.js status dashboard, a modular FastAPI API, PostgreSQL connectivity through
-SQLAlchemy/Alembic, and a server-side Gemini provider adapter. Product domains
-such as organizations, companies, ingestion, RAG, chat, leads and
-integrations are intentionally reserved for later phases.
+Monorepo for the FORM4TH AI Agent platform. Phases 1 and 2 provide a Next.js
+foundation, Supabase Auth integration, a modular FastAPI API, PostgreSQL
+connectivity through SQLAlchemy/Alembic, tenant authorization, and basic
+company management. Knowledge ingestion, RAG, chat, leads and integrations
+remain reserved for later phases.
 
 ## Requisitos
 
@@ -12,6 +12,7 @@ integrations are intentionally reserved for later phases.
 - Python 3.12+
 - Acceso a un proyecto Supabase/PostgreSQL
 - Una API key de Google Gemini para el smoke check de IA
+- Un proyecto Supabase con Auth habilitado
 - Docker (opcional, para construir la imagen del backend)
 
 ## Variables de entorno
@@ -36,6 +37,10 @@ caracteres especiales debe estar correctamente codificada en la URL.
 `NEXT_PUBLIC_API_URL` es la única variable pública del frontend y contiene solo
 la URL del backend. Las credenciales de Gemini, Supabase y PostgreSQL son
 exclusivamente server-side.
+
+Para Fase 2 configura también `NEXT_PUBLIC_SUPABASE_URL` y
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Son valores públicos para el navegador;
+nunca uses una service role key en el frontend.
 
 ## Instalación y ejecución del frontend
 
@@ -112,6 +117,40 @@ npm run build
 El test unitario de Gemini usa un cliente falso y no consume API. El smoke test
 real solo se ejecuta al llamar al endpoint con `GEMINI_API_KEY` configurada.
 
+## Authentication y multi-tenancy
+
+El registro y login utilizan Supabase Auth. El frontend restaura la sesión,
+envía `Authorization: Bearer ...` al backend y protege `/dashboard` y
+`/onboarding` mediante `proxy.ts`. FastAPI verifica JWT usando el JWKS público
+de Supabase con cache TTL y deriva la identidad desde el token; nunca confía en
+`user_id`, `organization_id` o roles enviados por el navegador.
+
+El onboarding crea la organización y su membership `owner` en una transacción.
+Los roles iniciales son `owner`, `admin` y `member`: todos pueden leer sus
+recursos y solo owner/admin puede crear, editar o archivar companies.
+
+Rutas de Fase 2: `/login`, `/register`, `/forgot-password`, `/onboarding`,
+`/dashboard`, `/dashboard/companies`, `/dashboard/companies/new` y
+`/dashboard/companies/[id]`.
+
+Endpoints nuevos: `GET /api/v1/me`, `POST/GET /api/v1/organizations`,
+`GET /api/v1/organizations/{id}` y CRUD de companies bajo
+`/api/v1/organizations/{organization_id}/companies`.
+
+## Migrations y RLS
+
+Migration `0002_multitenancy` crea `profiles`, `organizations`,
+`organization_members` y `companies`, con constraints, índices, RLS y policies.
+Ejecuta desde `backend/` con `DATABASE_URL` configurada:
+
+```bash
+alembic upgrade head
+```
+
+La estrategia reproducible para verificar RLS con Supabase está en
+`supabase/tests/README.md`. No se declara ejecutada sin un proyecto Supabase
+real. pgvector y knowledge tables pertenecen a fases posteriores.
+
 ## Docker
 
 Construye la imagen desde la raíz:
@@ -129,7 +168,7 @@ secretos; nunca las copies dentro de la imagen.
 Cada fase se desarrolla en una rama propia. Esta implementación corresponde a:
 
 ```text
-feature/fase-1-foundation
+feature/fase-2-multitenancy-companies
 ```
 
 Las siguientes ramas previstas están documentadas en `Docs/AGENTS.md`; no se
@@ -139,9 +178,9 @@ crean por adelantado. El flujo recomendado para publicar esta fase es:
 git status
 git branch --show-current
 git log --oneline -10
-git push -u origin feature/fase-1-foundation
+git push -u origin feature/fase-2-multitenancy-companies
 ```
 
-Después, abre un Pull Request desde `feature/fase-1-foundation` hacia `main`,
+Después, abre un Pull Request desde `feature/fase-2-multitenancy-companies` hacia `main`,
 revisa los checks automatizados y realiza el merge mediante el flujo protegido
 del repositorio. Este agente no hace push ni crea Pull Requests.
