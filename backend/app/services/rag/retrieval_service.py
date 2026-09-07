@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import bindparam, func, select
+from sqlalchemy import Float, bindparam, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -29,7 +29,7 @@ class RetrievedChunk:
 
 def build_retrieval_statement(organization_id: UUID, company_id: UUID, query_vector: list[float], limit: int, min_similarity: float):
     vector_param = bindparam("query_embedding", query_vector, type_=Vector768(768))
-    distance = KnowledgeChunk.embedding.op("<=>")(vector_param)
+    distance = KnowledgeChunk.embedding.op("<=>", return_type=Float())(vector_param)
     source_url = func.coalesce(KnowledgeDocument.source_url, KnowledgeSource.source_url)
     return (
         select(KnowledgeChunk.id, KnowledgeChunk.document_id, KnowledgeChunk.source_id, KnowledgeDocument.title, KnowledgeChunk.content, (1 - distance).label("similarity"), source_url.label("source_url"), KnowledgeChunk.chunk_metadata)

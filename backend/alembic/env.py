@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import make_url
 
 from app.core.config import get_settings
 from app.models.base import Base
@@ -13,7 +14,10 @@ if config.config_file_name is not None:
 
 database_url = get_settings().database_url
 if database_url:
-    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    migration_url = make_url(database_url)
+    if migration_url.drivername in {"postgresql", "postgresql+asyncpg"}:
+        migration_url = migration_url.set(drivername="postgresql+psycopg")
+    config.set_main_option("sqlalchemy.url", migration_url.render_as_string(hide_password=False).replace("%", "%%"))
 
 target_metadata = Base.metadata
 

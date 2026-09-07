@@ -3,6 +3,16 @@ from sqlalchemy import URL
 
 from app.core.config import Settings
 from app.db.session import DatabaseNotConfiguredError, async_database_url
+
+
+def test_alembic_uses_psycopg_v3_for_postgresql() -> None:
+    from sqlalchemy import make_url
+
+    migration_url = make_url("postgresql://postgres:p%40ss%3Aword@db.example.test:5432/postgres")
+    migration_url = migration_url.set(drivername="postgresql+psycopg")
+
+    assert migration_url.drivername == "postgresql+psycopg"
+    assert migration_url.password == "p@ss:word"
 from app.services.database_health import check_database
 
 
