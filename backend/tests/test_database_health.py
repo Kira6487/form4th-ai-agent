@@ -6,7 +6,8 @@ from app.db.session import DatabaseNotConfiguredError, async_database_url
 from app.services.database_health import check_database
 
 
-def test_database_health_reports_missing_configuration(client) -> None:
+def test_database_health_reports_missing_configuration(client, monkeypatch) -> None:
+    monkeypatch.setattr("app.api.v1.health.get_settings", lambda: Settings(_env_file=None))
     response = client.get("/api/v1/health/db")
 
     assert response.status_code == 503
